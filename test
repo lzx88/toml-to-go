@@ -1,20 +1,90 @@
-.encoding = "GBK"
-vmlist1.config = "E:\home\Virtual Machines\CentOS 6 64 λ\CentOS 6 64 λ.vmx"
-vmlist2.config = ""
-vmlist1.DisplayName = "CentOS 6 64 λ"
-vmlist1.ParentID = "0"
-vmlist1.ItemID = "1"
-vmlist1.SeqID = "0"
-vmlist1.IsFavorite = "FALSE"
-vmlist1.IsClone = "FALSE"
-vmlist1.CfgVersion = "8"
-vmlist1.State = "paused"
-vmlist1.UUID = "56 4d 86 7c c7 45 f3 40-5c d4 7a 31 69 1f d8 c9"
-vmlist1.IsCfgPathNormalized = "TRUE"
-index0.field0.name = "guest"
-index0.field0.value = "centos 6 64 λ"
-index0.field0.default = "TRUE"
-index0.hostID = "localhost"
-index0.id = "E:\home\Virtual Machines\CentOS 6 64 λ\CentOS 6 64 λ.vmx"
-index0.field.count = "1"
-index.count = "1"
+func (the *RedisCli) EvalEx(want redis.RespType, script string, keys int, args ...interface{}) (*redis.Resp, int) {
+	conn, err := the.myPool.Get()
+	if err != nil {
+		log.Println(err)
+		return nil, ptl.ErrSrv
+	}
+	defer the.myPool.Put(conn)
+	resp := util.LuaEval(conn, script, keys, args...)
+	if resp.Err != nil {
+		log.Println(resp.Err)
+		return nil, ptl.ErrSrv
+	}
+	if resp.IsType(redis.Int) && want != redis.Int {
+		ret, _ := resp.Int()
+		return nil, ret
+	}
+	if !resp.IsType(want) {
+		log.Println("type isnt your want error ")
+		return nil, ptl.ErrSrv
+	}
+	return resp, 0
+}
+
+//lua
+
+
+package config
+
+import (
+	"github.com/gopher-lua"
+)
+
+
+type config map[string] *Val
+
+func (the config) Find(t string, keys ...string) *Val {
+	v := the[t]
+	if v.v.Type() == lua.LTNil {
+		panic("config no exist")
+	}
+	for _, k := range keys {
+		v = v.Get(k)
+	}
+	return v
+}
+
+type Val struct {
+	v lua.LValue
+}
+
+func (the *Val) Get(k string) *Val {
+	tbl, ok := the.v.(*lua.LTable)
+	if !ok {
+		panic("config is no a table")
+	}
+	return &Val{tbl.RawGet(lua.LString(k))}
+}
+
+func (the *Val) Walk(each func(v *Val)) {
+	tbl, ok := the.v.(*lua.LTable)
+	if !ok {
+		panic("config is no a table")
+	}
+	tbl.ForEach(func(k lua.LValue, v lua.LValue) {
+		if v.Type() == lua.LTNil {
+			panic("config no exist")
+		}
+		each(&Val{v})
+	})
+}
+
+func (the *Val) Uint32() uint32 {
+	return uint32(lua.LVAsNumber(the.v))
+}
+func (the *Val) Uint8() uint8 {
+	return uint8(lua.LVAsNumber(the.v))
+}
+func (the *Val) String() string {
+	return lua.LVAsString(the.v)
+}
+func (the *Val) Float() float64 {
+	return float64(lua.LVAsNumber(the.v))
+}
+func (the *Val) Int32() int32 {
+	return int32(lua.LVAsNumber(the.v))
+}
+
+func (the *Val) Int() int {
+	return int(lua.LVAsNumber(the.v))
+}
